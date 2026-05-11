@@ -1,0 +1,31 @@
+# Local/operator secrets and machine-specific config
+*.pem
+*.key
+*.p12
+*.pfx
+*.env
+.env
+.env.*
+!.env.example
+
+# Terraform local state, variables, and generated plans
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/*.tfvars
+!**/terraform.tfvars.example
+**/*.tfplan
+**/tfplan
+**/crash.log
+**/crash.*.log
+
+# Local deployment outputs / notes
+/after-terraform-files/
+*.local
+*.local.*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
