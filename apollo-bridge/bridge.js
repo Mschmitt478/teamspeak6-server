@@ -27,6 +27,8 @@ const cfg = {
   openaiApiKey: env('OPENAI_API_KEY', ''),
   openaiModel: env('OPENAI_MODEL', 'gpt-4.1-mini'),
   cooldownMs: Number(env('APOLLO_BRIDGE_COOLDOWN_MS', '1500')),
+  replyMode: env('APOLLO_REPLY_MODE', 'serverquery'),
+  guiSendCommand: env('APOLLO_GUI_SEND_COMMAND', ''),
 };
 
 const state = {
@@ -183,14 +185,32 @@ async function finishSetup() {
   }
   send(`servernotifyregister event=textchannel id=${cfg.channelId}`);
   await sleep(250);
-  send(`sendtextmessage targetmode=2 target=${cfg.channelId} msg=${tsEscape('Apollo online. Ask me anything here, or use !apollo help.')}`);
+  await postChannelMessage('Apollo online. Ask me anything here, or use !apollo help.');
   state.ready = true;
 }
 
 async function postChannelMessage(message) {
   for (const part of chunk(message, 900)) {
-    send(`sendtextmessage targetmode=2 target=${cfg.channelId} msg=${tsEscape(part)}`);
+    if (cfg.replyMode === 'gui') {
+      await sendViaGui(part);
+    } else {
+      send(`sendtextmessage targetmode=2 target=${cfg.channelId} msg=${tsEscape(part)}`);
+    }
     await sleep(300);
+  }
+}
+
+async function sendViaGui(message) {
+  if (!cfg.guiSendCommand) throw new Error('APOLLO_REPLY_MODE=gui requires APOLLO_GUI_SEND_COMMAND.');
+  const result = spawnSync(cfg.guiSendCommand, [message], {
+    shell: true,
+    encoding: 'utf8',
+    timeout: 60_000,
+    maxBuffer: 1024 * 1024,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    throw new Error(`GUI send failed (${result.status}): ${result.stderr || result.stdout}`);
   }
 }
 
