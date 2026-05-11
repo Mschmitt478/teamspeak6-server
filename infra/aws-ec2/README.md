@@ -58,6 +58,65 @@ enable_query_http = false
 enable_query_ssh  = true
 ```
 
+To install the lightweight ApolloBridge daemon on the same EC2 instance:
+
+```hcl
+enable_apollo_bridge     = true
+apollo_bridge_channel_id = 4
+apollo_bridge_prefix     = "@Apollo"
+```
+
+ApolloBridge reads secrets from `/opt/apollo-bridge/.env.local` on the host. Terraform creates a placeholder file but does not store the real AI API key in Git or Terraform state. After deploy, SSH to the host, edit that file, replace `OPENAI_API_KEY=replace-me`, then run:
+
+```bash
+sudo systemctl start apollo-bridge
+sudo systemctl status apollo-bridge
+```
+
+## Optional Real TS6 GUI Client Bot Host
+
+If you want Apollo to eventually appear as a real registered TeamSpeak user instead of only a ServerQuery presence, enable the experimental GUI bot host:
+
+```hcl
+enable_ts6_gui_bot        = true
+ts6_gui_bot_instance_type = "t3.small"
+enable_ts6_gui_bot_vnc    = true
+```
+
+This creates a **second** slim Ubuntu EC2 instance. It installs:
+
+- Xvfb virtual display
+- Openbox window manager
+- localhost-only x11vnc for inspection via SSH tunnel
+- TeamSpeak 6 Linux client tarball
+- screenshot/OCR/input helpers: `scrot`, `tesseract`, `xdotool`, `wmctrl`
+- systemd units for display, window manager, VNC, and TS6 client
+
+No VNC port is opened publicly. Use the Terraform output tunnel command, then connect a local VNC viewer to `127.0.0.1:5900`.
+
+After deploy, SSH to the GUI bot host and edit:
+
+```bash
+sudo nano /opt/apollo-gui-bot/.env.local
+```
+
+Set the real TS account/channel credentials there. Do not commit them. Then start:
+
+```bash
+sudo systemctl start apollo-gui-client
+sudo systemctl status apollo-gui-client
+```
+
+Supported Discord-like feature map:
+
+- **Always-on text listener/replier:** supported today by ApolloBridge/ServerQuery.
+- **Commands:** supported today with `!apollo help`, `!apollo status`, `!apollo ping`.
+- **Proactive posts:** supported today via `/opt/apollo-bridge/outbox/*.txt`.
+- **Real user presence:** experimental via GUI bot host; requires manual TS6 login/session hardening.
+- **Voice:** future layer using virtual audio + STT/TTS; not implemented yet.
+- **Message edits/deletes/history purge:** TS6 ServerQuery does not currently expose reliable Discord-like APIs for this.
+- **Reactions/buttons/embeds:** not supported by TS6 text channels like Discord.
+
 You can find your public IP with:
 
 ```powershell
@@ -109,6 +168,8 @@ Keep these local only:
 - `.terraform/` — provider/plugin cache
 - `tfplan` / `*.tfplan` — generated Terraform plans
 - `after-terraform-files/` — local deployment outputs such as public IPs and instance IDs
+- `/opt/apollo-bridge/.env.local` on the EC2 host — real ApolloBridge AI credentials
+- `/opt/apollo-gui-bot/.env.local` on the optional GUI bot host — real TS account/channel credentials
 - private keys such as `*.pem`
 
 The committed source should contain only generic defaults and examples.

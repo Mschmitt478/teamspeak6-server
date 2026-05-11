@@ -136,13 +136,18 @@ resource "aws_instance" "teamspeak" {
 
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
-    voice_port           = var.voice_port
-    file_transfer_port   = var.file_transfer_port
-    enable_file_transfer = var.enable_file_transfer
-    enable_query_http    = var.enable_query_http
-    query_http_port      = var.query_http_port
-    enable_query_ssh     = var.enable_query_ssh
-    query_ssh_port       = var.query_ssh_port
+    voice_port                    = var.voice_port
+    file_transfer_port            = var.file_transfer_port
+    enable_file_transfer          = var.enable_file_transfer
+    enable_query_http             = var.enable_query_http
+    query_http_port               = var.query_http_port
+    enable_query_ssh              = var.enable_query_ssh
+    query_ssh_port                = var.query_ssh_port
+    enable_apollo_bridge          = var.enable_apollo_bridge
+    apollo_bridge_channel_id      = var.apollo_bridge_channel_id
+    apollo_bridge_prefix          = var.apollo_bridge_prefix
+    apollo_bridge_openai_model    = var.apollo_bridge_openai_model
+    apollo_bridge_source_base_url = var.apollo_bridge_source_base_url
   })
 
   root_block_device {
@@ -185,6 +190,70 @@ resource "aws_eip" "teamspeak" {
 resource "aws_eip_association" "teamspeak" {
   allocation_id = aws_eip.teamspeak.id
   instance_id   = aws_instance.teamspeak.id
+}
+
+resource "aws_security_group" "ts6_gui_bot" {
+  count       = var.enable_ts6_gui_bot ? 1 : 0
+  name        = "${var.name_prefix}-gui-bot-sg"
+  description = "Experimental Apollo TS6 GUI client bot host"
+  vpc_id      = local.vpc_id
+
+  dynamic "ingress" {
+    for_each = length(var.admin_cidrs) > 0 ? [1] : []
+
+    content {
+      description = "SSH admin only; use SSH tunnel for localhost VNC"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = var.admin_cidrs
+    }
+  }
+
+  egress {
+    description = "Outbound internet and TeamSpeak access"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-gui-bot-sg"
+    Role = "apollo-gui-bot"
+  })
+}
+
+resource "aws_instance" "ts6_gui_bot" {
+  count                       = var.enable_ts6_gui_bot ? 1 : 0
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = var.ts6_gui_bot_instance_type
+  subnet_id                   = local.subnet_id
+  vpc_security_group_ids      = [aws_security_group.ts6_gui_bot[0].id]
+  key_name                    = var.ssh_key_name
+  associate_public_ip_address = true
+
+  user_data_replace_on_change = true
+  user_data = templatefile("${path.module}/gui_bot_user_data.sh.tpl", {
+    teamspeak_address   = var.dns_name != null ? var.dns_name : aws_eip.teamspeak.public_ip
+    client_download_url = var.ts6_gui_bot_client_download_url
+    client_sha256       = var.ts6_gui_bot_client_sha256
+    display             = var.ts6_gui_bot_display
+    screen_geometry     = var.ts6_gui_bot_screen_geometry
+    enable_vnc          = var.enable_ts6_gui_bot_vnc
+    vnc_port            = var.ts6_gui_bot_vnc_port
+  })
+
+  root_block_device {
+    volume_size = var.ts6_gui_bot_root_volume_size_gb
+    volume_type = "gp3"
+    encrypted   = true
+  }
+
+  tags = merge(local.common_tags, {
+    Name = "${var.name_prefix}-apollo-gui-bot"
+    Role = "apollo-gui-bot"
+  })
 }
 
 data "aws_iam_policy_document" "dlm_assume_role" {

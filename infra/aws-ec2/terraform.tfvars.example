@@ -22,3 +22,19 @@ enable_query_http = false
 enable_query_ssh  = false
 # query_ssh_port  = 10022
 # query_http_port = 10080
+
+# Optional ApolloBridge service on the same EC2 instance.
+# Requires enable_query_ssh = true. Put real AI credentials only in
+# /opt/apollo-bridge/.env.local on the host after deploy.
+enable_apollo_bridge     = false
+apollo_bridge_channel_id = 4
+apollo_bridge_prefix     = "@Apollo"
+# apollo_bridge_openai_model = "gpt-4.1-mini"
+
+# Optional experimental real TS6 GUI client bot host.
+# Creates a second EC2 instance with Xvfb/Openbox/x11vnc and the TS6 Linux client.
+# Credentials stay only in /opt/apollo-gui-bot/.env.local on that host.
+enable_ts6_gui_bot          = false
+ts6_gui_bot_instance_type   = "t3.small"
+enable_ts6_gui_bot_vnc      = true
+# ts6_gui_bot_vnc_port      = 5900

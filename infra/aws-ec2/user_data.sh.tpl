@@ -4,7 +4,7 @@ set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y ca-certificates curl gnupg lsb-release
+apt-get install -y ca-certificates curl gnupg lsb-release%{ if enable_apollo_bridge } nodejs npm%{ endif }
 
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -82,10 +82,74 @@ services:
 %{ if enable_query_ssh ~}
       - TSSERVER_QUERY_SSH_ENABLED=true
       - TSSERVER_QUERY_SSH_PORT=${query_ssh_port}
+      - TSSERVER_QUERY_ADMIN_PASSWORD=$${QUERY_ADMIN_PASSWORD}
 %{ endif ~}
     volumes:
       - /opt/teamspeak-data:/var/tsserver
 EOF
 
+%{ if enable_query_ssh ~}
+if [ ! -f /root/teamspeak-query-admin-password ]; then
+  openssl rand -base64 36 >/root/teamspeak-query-admin-password
+  chmod 600 /root/teamspeak-query-admin-password
+fi
+QUERY_ADMIN_PASSWORD="$(cat /root/teamspeak-query-admin-password)"
+export QUERY_ADMIN_PASSWORD
+printf '127.0.0.1\n::1\n' >/opt/teamspeak-data/query_ip_allowlist.txt
+%{ endif ~}
+
 docker compose -f /opt/teamspeak/docker-compose.yaml pull
 docker compose -f /opt/teamspeak/docker-compose.yaml up -d
+
+%{ if enable_apollo_bridge ~}
+mkdir -p /opt/apollo-bridge
+curl -fsSL "${apollo_bridge_source_base_url}/bridge.js" -o /opt/apollo-bridge/bridge.js
+curl -fsSL "${apollo_bridge_source_base_url}/package.json" -o /opt/apollo-bridge/package.json
+chmod 0644 /opt/apollo-bridge/bridge.js /opt/apollo-bridge/package.json
+
+if [ ! -f /opt/apollo-bridge/.env.local ]; then
+  cat >/opt/apollo-bridge/.env.local <<'EOF_APOLLO_BRIDGE_ENV'
+TS_HOST=127.0.0.1
+TS_QUERY_PORT=${query_ssh_port}
+TS_QUERY_USER=serveradmin
+TS_VIRTUAL_SERVER_ID=1
+TS_CHANNEL_ID=${apollo_bridge_channel_id}
+TS_QUERY_PASSWORD_COMMAND=sudo cat /root/teamspeak-query-admin-password
+APOLLO_BRIDGE_PREFIX=${apollo_bridge_prefix}
+APOLLO_BRIDGE_COMMAND_PREFIX=!apollo
+APOLLO_BRIDGE_NICKNAME=Apollo
+APOLLO_BRIDGE_OUTBOX_DIR=/opt/apollo-bridge/outbox
+APOLLO_BRIDGE_MODE=openai
+OPENAI_API_KEY=replace-me
+OPENAI_MODEL=${apollo_bridge_openai_model}
+EOF_APOLLO_BRIDGE_ENV
+  chmod 600 /opt/apollo-bridge/.env.local
+fi
+
+cat >/etc/systemd/system/apollo-bridge.service <<'EOF_APOLLO_BRIDGE_SERVICE'
+[Unit]
+Description=ApolloBridge TeamSpeak text bridge
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/apollo-bridge
+Environment=NODE_ENV=production
+ExecStartPre=/bin/bash -lc 'test -f /opt/apollo-bridge/.env.local && ! grep -q "OPENAI_API_KEY=replace-me" /opt/apollo-bridge/.env.local'
+ExecStart=/usr/bin/node /opt/apollo-bridge/bridge.js
+Restart=always
+RestartSec=10
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF_APOLLO_BRIDGE_SERVICE
+
+systemctl daemon-reload
+systemctl enable apollo-bridge.service
+if ! systemctl start apollo-bridge.service; then
+  echo "ApolloBridge installed but not started. Add OPENAI_API_KEY to /opt/apollo-bridge/.env.local, then run: systemctl start apollo-bridge" >&2
+fi
+%{ endif ~}

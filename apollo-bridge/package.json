@@ -1,0 +1,14 @@
+{
+  "name": "apollo-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Text bridge between TeamSpeak 6 ServerQuery and OpenClaw Apollo.",
+  "scripts": {
+    "start": "node bridge.js",
+    "check": "node --check bridge.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
